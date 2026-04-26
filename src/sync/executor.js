@@ -6,11 +6,16 @@ import Table from 'cli-table3';
 /**
  * 执行同步操作
  * @param {Object} diff - 差异结果 { toAdd, toUpdate, toDelete }
- * @param {Object} options - 选项 { dryRun, verbose, delete: deleteExtra }
- * @returns {Object} 执行结果统计
+ * @param {Object} options - 选项 { dryRun, verbose, delete: deleteExtra, output }
  */
 async function executeSync(diff, options = {}) {
-  const { dryRun = false, verbose = false, delete: deleteExtra = true } = options;
+  const {
+    dryRun = false,
+    verbose = false,
+    delete: deleteExtra = true,
+    output = 'table'  // 'table' | 'stream'
+  } = options;
+
   const stats = {
     added: 0,
     updated: 0,
@@ -25,18 +30,20 @@ async function executeSync(diff, options = {}) {
     return stats;
   }
 
-  // 显示同步计划
-  if (dryRun || verbose) {
+  // table 模式: 显示同步计划
+  if (output === 'table' && (dryRun || verbose)) {
     showSyncPlan(diff, deleteExtra);
   }
 
   if (dryRun) {
-    console.log('\n[试运行模式] 未执行任何操作');
+    if (output === 'table') {
+      console.log('\n[试运行模式] 未执行任何操作');
+    }
     return stats;
   }
 
   // 执行同步
-  const spinner = ora('正在同步...').start();
+  const spinner = output === 'table' ? ora('正在同步...').start() : null;
 
   try {
     // 1. 添加新文件
@@ -45,7 +52,9 @@ async function executeSync(diff, options = {}) {
         await fs.ensureDir(path.dirname(item.target));
         await fs.copy(item.source, item.target, { preserveTimestamps: true });
         stats.added++;
-        if (verbose) {
+        if (output === 'stream') {
+          console.log(`新增: ${item.relative}`);
+        } else if (verbose && spinner) {
           spinner.text = `添加: ${item.relative}`;
         }
       } catch (err) {
@@ -58,7 +67,9 @@ async function executeSync(diff, options = {}) {
       try {
         await fs.copy(item.source, item.target, { overwrite: true, preserveTimestamps: true });
         stats.updated++;
-        if (verbose) {
+        if (output === 'stream') {
+          console.log(`更新: ${item.relative}`);
+        } else if (verbose && spinner) {
           spinner.text = `更新: ${item.relative}`;
         }
       } catch (err) {
@@ -72,7 +83,9 @@ async function executeSync(diff, options = {}) {
         try {
           await fs.remove(item.target);
           stats.deleted++;
-          if (verbose) {
+          if (output === 'stream') {
+            console.log(`删除: ${item.relative}`);
+          } else if (verbose && spinner) {
             spinner.text = `删除: ${item.relative}`;
           }
         } catch (err) {
@@ -81,20 +94,31 @@ async function executeSync(diff, options = {}) {
       }
     }
 
-    spinner.succeed('同步完成');
-    showStats(stats);
+    // 完成提示
+    if (spinner) {
+      spinner.succeed('同步完成');
+    }
+
+    // 输出汇总
+    if (output === 'table') {
+      showStats(stats);
+    } else if (stats.errors.length > 0) {
+      // stream 模式: 只显示错误
+      console.log('');
+      stats.errors.forEach(err => {
+        console.log(`  ✗ ${err.action} ${err.file}: ${err.error}`);
+      });
+    }
 
     return stats;
   } catch (err) {
-    spinner.fail('同步失败');
+    if (spinner) spinner.fail('同步失败');
     throw err;
   }
 }
 
 /**
  * 显示同步计划
- * @param {Object} diff - 差异结果
- * @param {boolean} deleteExtra - 是否显示删除
  */
 function showSyncPlan(diff, deleteExtra) {
   console.log('\n同步计划:');
@@ -119,8 +143,7 @@ function showSyncPlan(diff, deleteExtra) {
 }
 
 /**
- * 显示统计信息
- * @param {Object} stats - 统计结果
+ * 显示统计信息（表格）
  */
 function showStats(stats) {
   const table = new Table({
