@@ -9,32 +9,24 @@ program
   .description('WSL2 to Windows code sync tool')
   .version('1.0.0');
 
-// wsync config init
-const configCmd = program
-  .command('config')
-  .description('Configuration commands');
-
-configCmd
+// wsync init
+program
   .command('init')
   .description('Initialize .wsync.config.js or .wsync.config.cjs in current directory')
   .option('-y, --yes', 'Use default values without prompts')
   .action(configInitCommand);
 
 // wsync sync
-const syncCmd = program
+program
   .command('sync')
-  .description('Sync commands');
-
-syncCmd
-  .command('run')
-  .alias('sync')
   .description('Execute one-time sync from WSL2 to Windows')
   .option('-c, --config <path>', 'Path to config file')
   .option('-d, --dry-run', 'Show what would be synced without executing')
   .option('-v, --verbose', 'Show detailed output')
   .action((options) => syncCommand({ ...options, watch: false }));
 
-syncCmd
+// wsync watch
+program
   .command('watch')
   .description('Watch files and sync automatically')
   .option('-c, --config <path>', 'Path to config file')
